@@ -31,3 +31,14 @@ Virtual Machine Creation and Configuration
 Within Splunk, I created a new UDP data input on port 514 to receive the rsyslog traffic.
 
 A simple search query in Splunk for host=[Metasploitable_VM_IP] confirmed the successful ingestion of logs, demonstrating a functional SIEM pipeline.
+
+**Project 2: SQL Injection Attack Detection**
+**Setting up the Test**
+To initiate the experiment, I navigated to the Damn Vulnerable Web Application (DVWA) on the Metasploitable VM by entering its IP address into a web browser. Within the DVWA interface, I configured the security level to "low" to ensure the application was susceptible to basic attacks. I then proceeded to the SQL Injection module and conducted a test by submitting a common boolean-based payload: '1' OR '1'='1. The purpose of this test was to trigger a malicious event that would be logged by the web server.
+
+**Initial Findings & Troubleshooting**
+Upon performing the attack, I returned to the Splunk search interface and ran a query to search for the malicious payload. I found a sudden burst of 433 events that had occurred simultaneously. However, a detailed analysis revealed that these events were not the SQL injection attempts I was looking for. Instead, they were unrelated system logs from services like dhclient, which were being forwarded from the Metasploitable VM.
+
+This led me to a critical discovery: my initial log forwarding setup was only configured to capture system-level logs, not the application-specific logs from the web server. To correctly capture the attack, a new experiment would have to be conducted after adjusting my Splunk configuration to also ingest the Apache web server's access and error logs.
+
+This troubleshooting phase proved invaluable, as it highlighted the importance of a precise log ingestion pipeline and the need to verify that a SIEM is collecting the correct data.
