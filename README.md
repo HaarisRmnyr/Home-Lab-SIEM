@@ -1,4 +1,4 @@
-# Home-Lab-SIEM-SetUp
+# Home-Lab-SIEM and Log Analysis Project
 Virtual Machine Creation and Configuration
 
 **Metasploitable 2 VM:**
