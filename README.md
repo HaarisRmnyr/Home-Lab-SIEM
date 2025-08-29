@@ -42,3 +42,34 @@ Upon performing the attack, I returned to the Splunk search interface and ran a 
 This led me to a critical discovery: my initial log forwarding setup was only configured to capture system-level logs, not the application-specific logs from the web server. To correctly capture the attack, a new experiment would have to be conducted after adjusting my Splunk configuration to also ingest the Apache web server's access and error logs.
 
 This troubleshooting phase proved invaluable, as it highlighted the importance of a precise log ingestion pipeline and the need to verify that a SIEM is collecting the correct data.
+
+Following my initial findings that the web application logs were not being forwarded, this phase of the project focuses on correcting the log ingestion pipeline and successfully capturing a malicious SQL injection event. This demonstrates an understanding of log forwarding configuration and targeted threat hunting.
+
+**Configuring Apache Log Forwarding**
+- To ensure Splunk could collect the application-level logs where the SQL injection attack was recorded, I configured the Apache web server on the Metasploitable VM to forward its access logs.
+
+- I navigated to the Apache configuration files on the Metasploitable VM.
+
+- I added a new rule to forward all web server access logs to my Splunk instance. This was a critical correction to my previous configuration, which only forwarded system-level logs like those from dhclient.
+
+This step was essential to bridge the gap between my attack and my SIEM, proving the importance of a properly configured log pipeline.
+
+**Re-conducting the Attack & Analyzing Results**
+
+After configuring the new log forwarding, I re-conducted the SQL injection test. This time, a refined search in Splunk successfully isolated the malicious events. The logs provided clear and definitive evidence of the attack, its source, and its impact.
+
+Splunk Query: index=main "SQLi"
+
+This query successfully filtered out all unrelated system chatter, leaving only the precise events related to the attack.
+
+Source of the Attack:
+
+The logs identified the source IP address as 192.168.56.1, which is the IP of my host machine. In a real-world scenario, this would be a key indicator of the attacker's origin.
+
+Impact of the Attack:
+
+The log entry showed an HTTP/1.1 request with a 200 OK status code, confirming that the vulnerable web server successfully processed the malicious payload.
+
+Crucially, the full log entry captured the injected string, 1' OR '1'='1, in the URL parameter. This proved that the application did not sanitize the input, leaving it open to a successful injection.
+
+This project demonstrates my ability to not only detect a threat but also to troubleshoot a complex technical issue and successfully verify the integrity of my security monitoring environment.
