@@ -1,101 +1,86 @@
-# Home-Lab-SIEM and Log Analysis Project
+# Home Lab: Splunk SIEM with Metasploitable 2
 
-**Virtual Machine Creation and Configuration**
+A small VirtualBox lab where a vulnerable Linux machine sends its logs to Splunk, and I attack it to see what the SIEM actually catches. The first attack didn't show up at all, which turned out to be the most useful part.
 
-**Metasploitable 2 VM:**
+**Stack:** VirtualBox, Ubuntu Server 20.04, Splunk Enterprise, Metasploitable 2 (Apache, DVWA), rsyslog
 
-- I created a new virtual machine in Oracle VirtualBox, selecting Linux as the guest operating system.
+![Lab diagram](screenshots/lab-diagram.png)
 
-- I used the downloaded Metasploitable 2 virtual disk image (.vmdk) to provision the VM, allowing for a pre-configured vulnerable environment.
-  Splunk VM:
+## Setup
 
-- I provisioned a second VM, this time using an Ubuntu Server 20.04 ISO file as the installation media. This OS would host the Splunk Enterprise application.
-- Initially, the Splunk VM's network adapter was configured with NAT to provide it with internet access, allowing me to download the Splunk Enterprise package        using the wget command.
+| Machine | OS | Role | Network |
+|---|---|---|---|
+| Splunk VM | Ubuntu Server 20.04 | Runs Splunk Enterprise | NAT first, then Host-Only |
+| Metasploitable VM | Metasploitable 2 (.vmdk) | Vulnerable target (Apache, DVWA), forwards logs | Host-Only |
+| Host laptop | - | Browser for DVWA and Splunk (192.168.56.1) | Host-Only |
 
-**Network and Log Integration**
-**Network Configuration:**
-- After downloading the Splunk software, I reconfigured the Splunk VM's network adapter to Host-Only mode. This created a secure, isolated network between the host   machine (my laptop) and the virtual machines, ensuring the lab could not be accessed from the public internet.
+**Metasploitable VM:** created a Linux VM in VirtualBox and attached the Metasploitable 2 disk image.
 
-- I obtained the IP addresses of both the Splunk VM and the Metasploitable VM to configure log forwarding.
+**Splunk VM:** created a second VM from the Ubuntu Server 20.04 ISO. It started on a NAT adapter so I could download Splunk with `wget`. After the download I switched it to Host-Only, so the lab is only reachable from my laptop and the other VM, not the internet.
 
-**Log Forwarding Setup:**
+![VirtualBox network settings](screenshots/network-settings.png)
 
-- To successfully link the two VMs, I configured rsyslog on the Metasploitable machine to forward system logs to the Splunk VM.
+## Forwarding logs
 
-- I edited the rsyslog.conf file to add a forwarding rule: *.* @[SPLUNK_VM_IP], which directed all log data to the Splunk instance's listener port.
+I noted the IP of each VM, then added this rule to `/etc/rsyslog.conf` on the Metasploitable VM:
 
-**Verification of Success**
-- To verify that the logs were being successfully ingested by Splunk, I performed the following:
+```
+*.* @[SPLUNK_VM_IP]
+```
 
-- I accessed the Splunk web interface by navigating to the Splunk VM's IP address and the default port (8000) in my browser.
+The single `@` sends everything over UDP. In the Splunk web UI (VM IP, port 8000) I created a UDP data input on port 514.
 
-Within Splunk, I created a new UDP data input on port 514 to receive the rsyslog traffic.
+To check it worked, I searched for `host=[METASPLOITABLE_VM_IP]` and the logs were there.
 
-A simple search query in Splunk for host=[Metasploitable_VM_IP] confirmed the successful ingestion of logs, demonstrating a functional SIEM pipeline.
+![Splunk UDP input and host search](screenshots/splunk-input.png)
 
-**Project 2: SQL Injection Attack Detection**
-**Setting up the Test**
-To initiate the experiment, I navigated to the Damn Vulnerable Web Application (DVWA) on the Metasploitable VM by entering its IP address into a web browser. Within the DVWA interface, I configured the security level to "low" to ensure the application was susceptible to basic attacks. I then proceeded to the SQL Injection module and conducted a test by submitting a common boolean-based payload: '1' OR '1'='1. The purpose of this test was to trigger a malicious event that would be logged by the web server.
+## Problem: the SQL injection didn't show up
 
-**Initial Findings & Troubleshooting**
-Upon performing the attack, I returned to the Splunk search interface and ran a query to search for the malicious payload. I found a sudden burst of 433 events that had occurred simultaneously. However, a detailed analysis revealed that these events were not the SQL injection attempts I was looking for. Instead, they were unrelated system logs from services like dhclient, which were being forwarded from the Metasploitable VM.
+I set DVWA's security level to low and ran a basic injection from the SQL Injection module:
 
-This led me to a critical discovery: my initial log forwarding setup was only configured to capture system-level logs, not the application-specific logs from the web server. To correctly capture the attack, a new experiment would have to be conducted after adjusting my Splunk configuration to also ingest the Apache web server's access and error logs.
+```
+1' OR '1'='1
+```
 
-This troubleshooting phase proved invaluable, as it highlighted the importance of a precise log ingestion pipeline and the need to verify that a SIEM is collecting the correct data.
+Searching Splunk for the payload gave me a burst of 433 events, all at the same time. None of them were the attack. They were system logs, mostly from `dhclient`.
 
-Following my initial findings that the web application logs were not being forwarded, this phase of the project focuses on correcting the log ingestion pipeline and successfully capturing a malicious SQL injection event. This demonstrates an understanding of log forwarding configuration and targeted threat hunting.
+The cause was my rsyslog rule. It only forwarded system logs, and the attack was recorded in the Apache access log, which I wasn't sending anywhere. The pipeline looked like it was working because events were arriving, but they were the wrong events.
 
-**Configuring Apache Log Forwarding**
-- To ensure Splunk could collect the application-level logs where the SQL injection attack was recorded, I configured the Apache web server on the Metasploitable VM to forward its access logs.
+I added a rule to forward the Apache access logs to Splunk and ran the attack again.
 
-- I navigated to the Apache configuration files on the Metasploitable VM.
+## SQL injection result
 
-- I added a new rule to forward all web server access logs to my Splunk instance. This was a critical correction to my previous configuration, which only forwarded system-level logs like those from dhclient.
+Search used:
 
-This step was essential to bridge the gap between my attack and my SIEM, proving the importance of a properly configured log pipeline.
+```
+index=main "SQLi"
+```
 
-**Re-conducting the Attack & Analyzing Results**
+This time it returned only the attack. The log entry showed:
 
-After configuring the new log forwarding, I re-conducted the SQL injection test. This time, a refined search in Splunk successfully isolated the malicious events. The logs provided clear and definitive evidence of the attack, its source, and its impact.
+- **Source IP:** 192.168.56.1, my host laptop
+- **Response:** HTTP/1.1 200 OK, so the server processed the request
+- **Payload:** `1' OR '1'='1` in plain text in the URL parameter, which means DVWA did nothing to sanitize the input
 
-Splunk Query: index=main "SQLi"
+![SQLi search result in Splunk](screenshots/sqli-result.png)
 
-This query successfully filtered out all unrelated system chatter, leaving only the precise events related to the attack.
+## Brute-force test and alert
 
-Source of the Attack:
+I ran a brute-force login attack against DVWA five times to make sure the logging was consistent. This search returned the events from every run:
 
-The logs identified the source IP address as 192.168.56.1, which is the IP of my host machine. In a real-world scenario, this would be a key indicator of the attacker's origin.
+```
+index=main "vulnerabilities/brute"
+```
 
-Impact of the Attack:
+Then I set up a scheduled Splunk alert on that search. It triggers on a high volume of matching events, adds a flag to my dashboard, and sends an email to a set address.
 
-The log entry showed an HTTP/1.1 request with a 200 OK status code, confirming that the vulnerable web server successfully processed the malicious payload.
+![Alert configuration](screenshots/alert-config.png)
 
-Crucially, the full log entry captured the injected string, 1' OR '1'='1, in the URL parameter. This proved that the application did not sanitize the input, leaving it open to a successful injection.
+## What I took from it
 
-This project demonstrates my ability to not only detect a threat but also to troubleshoot a complex technical issue and successfully verify the integrity of my security monitoring environment.
+- Events showing up in a SIEM doesn't mean the right events are showing up. I should have confirmed the Apache logs were being collected before running the attack.
+- Using NAT only while downloading and Host-Only afterwards is an easy way to keep a lab isolated.
+- The unsanitized payload was readable straight from the access log, so input validation problems are easy to spot once the right logs are collected.
+- Writing down what went wrong and how I fixed it made the project easier to repeat.
 
-**Project 3: Brute-Force Attack Detection & Automated Alerting**
-
-This project demonstrates my ability to detect and automatically alert on brute-force attacks by analyzing a large volume of failed login attempts. It builds on my previous log analysis skills to implement a proactive security measure.
-
-**Simulating the Attack**
-I conducted a simulated brute-force attack targeting the DVWA application on the Metasploitable VM. The goal was to submit a high number of incorrect login attempts in a short period to trigger an alert. I performed this test five separate times to ensure consistent and reliable logging.
-
-**Log Analysis and Threat Hunting**
-Upon conducting the attacks, I performed a targeted search in Splunk to identify the malicious traffic.
-
-Splunk Query: index=main "vulnerabilities/brute"
-
-Findings: My search successfully returned all events related to the brute-force attempts. The logs confirmed that the requests were directed at the brute-force module of the DVWA application. This verified that my log forwarding and Splunk searches were working correctly.
-
-**Automated Detection and Response**
-To demonstrate the implementation of a proactive security control, I created an automated alert to detect and notify me of future brute-force attacks.
-
-- Alert Configuration: I configured a scheduled alert that monitors my Splunk index for a high volume of events containing the string "vulnerabilities/brute."
-
-- Dashboard Integration: The alert was set to add a flag to my dashboard, providing a visual warning of a potential attack.
-
-- Email Notification: I also configured the alert to send an email to a specified address upon detection, simulating a real-world notification to a security analyst for immediate investigation.
-
-This project showcases my proficiency in log analysis and my ability to configure automated, proactive alerts—a key skill for any role in a Security Operations Center (SOC).
+All attacks were run against my own VM on the Host-Only network.
