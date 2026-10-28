@@ -75,11 +75,6 @@ Crucially, the full log entry captured the injected string, 1' OR '1'='1, in the
 
 This project demonstrates my ability to not only detect a threat but also to troubleshoot a complex technical issue and successfully verify the integrity of my security monitoring environment.
 
-
-I can help you update your README file to document your successful brute-force attack experiment. This will add another strong portfolio piece.
-
-Here is an updated category for your README.md file, which you should add after your previous sections. It is structured to be professional, clear, and to showcase your skills effectively.
-
 **Project 3: Brute-Force Attack Detection & Automated Alerting**
 
 This project demonstrates my ability to detect and automatically alert on brute-force attacks by analyzing a large volume of failed login attempts. It builds on my previous log analysis skills to implement a proactive security measure.
